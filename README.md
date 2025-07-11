@@ -1,12 +1,48 @@
-# MyApplication - Android Location & Maps App
+# MyApplication - Advanced Location & Maps App
 
-A comprehensive Android application that demonstrates advanced location services integration with Google Maps, featuring both GPS and network-based location detection with enhanced accuracy algorithms.
+A sophisticated Android application demonstrating cutting-edge location services with Google Maps integration. Features intelligent dual-mode location detection: high-precision GPS with progressive accuracy enhancement algorithms, and advanced network-only positioning with accuracy improvement that completely excludes GPS for areas with GPS interference or privacy requirements.
 
 ## 📱 Features
 
-### 🎯 Dual Location Modes
-- **GPS Mode**: High-precision location using GPS/GNSS satellites with accuracy improvement algorithm
-- **Network Mode**: Fast location detection using cell towers, WiFi, and IP geolocation
+### 🎯 Intelligent Dual Location Modes
+- **GPS Mode**: High-precision location using GPS/GNSS satellites with progressive accuracy improvement algorithm (3-30m accuracy)
+- **Network Mode**: **ADVANCED** network-only location with accuracy improvement system - collects multiple samples over time to achieve best possible network accuracy (50-500m) while **strictly excluding GPS**
+
+### 🚫 GPS Exclusion Technology
+- **Active GPS Rejection**: Real-time filtering to prevent GPS data contamination
+- **Provider-Level Control**: Direct LocationManager usage for network-only sources
+- **Accuracy-Based Detection**: Smart filtering based on location accuracy patterns
+- **Multi-Layer Validation**: Multiple checks to ensure GPS-free operation
+
+### ⏱️ Network Accuracy Improvement System
+- **Multi-Sample Collection**: Continuously samples network locations every 3 seconds
+- **Best Location Selection**: Intelligently chooses most accurate reading from all samples
+- **Progressive Completion**: Completes early if excellent accuracy achieved, waits longer for improvement
+- **Smart Timeout Logic**: Balances accuracy improvement with reasonable wait times (15-45 seconds)
+- **User Cancellation**: Cancel button allows immediate use of current best location without waiting
+
+### 🌐 Network Location Technology
+
+#### **Strict GPS Exclusion Implementation**
+- **Provider-Level Filtering**: Uses only `LocationManager.NETWORK_PROVIDER`
+- **Runtime GPS Rejection**: Active filtering of GPS-sourced locations during operation
+- **Accuracy Pattern Analysis**: Rejects locations with GPS-typical accuracy patterns
+- **Multi-Layer Validation**: Provider name + accuracy + timing analysis
+
+#### **Network Source Hierarchy**
+1. **Cell Tower Triangulation** (Primary): 100-1000m accuracy
+2. **WiFi Network Positioning** (Secondary): 20-100m accuracy
+3. **IP Geolocation** (Fallback): 1000m+ accuracy
+4. **Cached Network Data** (Backup): Recent network locations from system
+
+#### **Smart Source Detection**
+```java
+private String getLocationSource(Location location) {
+    if (location.getAccuracy() > 1000) return "IP Geolocation";
+    else if (location.getAccuracy() > 100) return "Cell Tower";
+    else return "WiFi Network";
+}
+```
 
 ### 🗺️ Advanced Maps Integration
 - **Multiple Map Types**: Normal, Satellite, Hybrid (default), Terrain
@@ -17,6 +53,27 @@ A comprehensive Android application that demonstrates advanced location services
 ### 🔒 Smart Permission Handling
 - **GPS Mode**: Requires fine location permission for high accuracy
 - **Network Mode**: Only requires coarse location permission (privacy-friendly)
+
+### 🔘 Professional Dialog System
+- **Explicit Cancel Buttons**: Clear, dedicated cancel buttons in all location dialogs
+- **Non-Dismissible**: Dialogs cannot be cancelled by clicking outside or back button
+- **User-Controlled**: Only the cancel button or completion can close dialogs
+- **Immediate Response**: Cancel button provides instant cancellation
+- **Smart Cleanup**: Proper resource cleanup when cancelled
+
+### 🎯 Specialized Use Cases
+- **GPS Interference Areas**: Perfect for locations where GPS provides incorrect data
+- **Indoor Positioning**: Reliable location in buildings and underground areas
+- **Privacy-Conscious Users**: Network-only mode for reduced tracking footprint
+- **Battery Conservation**: Low-power network positioning for extended usage
+
+### ⚡ User Control Features
+- **Explicit Cancel Button**: Dedicated cancel button in dialogs (no outside-click cancellation)
+- **Flexible Waiting**: Users can wait for better accuracy or cancel immediately
+- **Real-time Progress**: Live updates showing current accuracy and elapsed time
+- **Smart Fallbacks**: Multiple fallback options if network location unavailable
+- **Immediate Usage**: Cancel anytime to use current best available location
+- **Non-Dismissible Dialogs**: Dialogs only close via cancel button or completion
 
 ## 🏗️ Architecture Overview
 
@@ -212,6 +269,12 @@ RelativeLayout
 - **GPS Location**: "GPS Location" with "GPS/GNSS" source
 - **Network Location**: "Network Location" with "Cell/WiFi/IP" source
 
+**Dialog Controls**:
+- **Progress Dialogs**: Horizontal progress bars with real-time updates
+- **Cancel Buttons**: Explicit "Cancel" buttons (negative button style)
+- **Non-Dismissible**: Cannot be cancelled by outside clicks or back button
+- **Live Messages**: Real-time accuracy and source information updates
+
 ## 🔧 Technical Implementation
 
 ### Dependencies
@@ -237,32 +300,94 @@ implementation("com.google.android.material:material:1.10.0")
 
 ### Location Strategies
 
-**GPS Mode**:
+**GPS Mode (High Precision)**:
 - **Priority**: `PRIORITY_HIGH_ACCURACY`
+- **Provider**: FusedLocationProviderClient with GPS enabled
 - **Update Interval**: 5 seconds
 - **Min Update**: 2 seconds
 - **Timeout**: None (continues until target accuracy)
 - **Target Accuracy**: 30 meters
+- **Algorithm**: Progressive accuracy improvement with visual feedback
 
-**Network Mode**:
-- **Priority**: `PRIORITY_BALANCED_POWER_ACCURACY`
-- **Update Interval**: 10 seconds
-- **Min Update**: 5 seconds
-- **Timeout**: 15 seconds
-- **Single Shot**: Gets location once and stops
+**Network Mode (GPS-Free)**:
+- **Priority**: `PRIORITY_LOW_POWER` (explicitly excludes GPS)
+- **Provider**: `LocationManager.NETWORK_PROVIDER` + `PASSIVE_PROVIDER`
+- **GPS Exclusion**: Multi-layer active rejection system
+- **Update Interval**: 5 seconds
+- **Timeout**: 25 seconds (extended for network-only)
+- **Sources**: Cell towers, WiFi networks, IP geolocation, cached network data
+- **Validation**: Provider name + accuracy pattern + timing analysis
 
 ## 🎯 Key Algorithms
 
-### 1. Accuracy Improvement Algorithm
+### 1. User Cancellation & Fallback System (Network Mode)
+Smart handling when users don't want to wait for accuracy improvement:
+
+```java
+private void handleNetworkLocationCancel() {
+    // Stop all location updates
+    if (networkAccuracyTimer != null) {
+        networkAccuracyTimer.cancel();
+    }
+
+    // Use best available location from candidates
+    if (!networkLocationCandidates.isEmpty()) {
+        Location bestLocation = getBestNetworkLocation();
+        updateUI(bestLocation);
+    } else {
+        showFallbackLocation(); // Use cached or approximate location
+    }
+}
+```
+
+**Fallback Hierarchy**:
+1. **Best Collected Sample**: Use most accurate from collected network locations
+2. **Cached Network Location**: Recent network location from system cache
+3. **Cached Passive Location**: Location from other apps (network-only)
+4. **Approximate Location**: Default area/city center as last resort
+
+### 2. GPS Exclusion Algorithm (Network Mode)
+Strict filtering to ensure only network-based locations are used:
+
+```java
+private boolean isLocationFromGPS(Location location) {
+    // Check provider name
+    String provider = location.getProvider();
+    if (provider != null && provider.equals("gps")) {
+        return true;
+    }
+
+    // Check accuracy pattern (GPS typically < 20m, Network > 50m)
+    if (location.getAccuracy() < 20 &&
+        location.getTime() > (System.currentTimeMillis() - 30000)) {
+        return true; // Likely GPS if very accurate and recent
+    }
+
+    return false;
+}
+```
+
+### 2. Accuracy Improvement Algorithm (GPS Mode)
 Progressive accuracy monitoring with visual feedback and automatic completion when target precision is achieved.
 
-### 2. Map Type Management
+### 3. Network Location Source Detection
+Identifies the specific network source used for location:
+
+```java
+private String getLocationSource(Location location) {
+    if (location.getAccuracy() > 1000) return "IP Geolocation";
+    else if (location.getAccuracy() > 100) return "Cell Tower";
+    else return "WiFi Network";
+}
+```
+
+### 4. Map Type Management
 Dynamic map type switching with appropriate feature enabling/disabling based on selected type.
 
-### 3. Permission Strategy
+### 5. Permission Strategy
 Intelligent permission requesting based on location mode - fine permissions for GPS, coarse for network.
 
-### 4. UI State Management
+### 6. UI State Management
 Real-time UI updates reflecting current mode, location status, and map configuration.
 
 ## 🔍 Troubleshooting
@@ -400,6 +525,49 @@ This project demonstrates:
 - **Error Handling**: Graceful failure management
 
 ## 📚 Code Examples
+
+### Professional Dialog with Cancel Button
+
+```java
+// Create non-dismissible dialog with explicit cancel button
+dialog = new ProgressDialog(MapsActivity.this);
+dialog.setTitle("Fetching Network Location");
+dialog.setProgressStyle(ProgressDialog.STYLE_HORIZONTAL);
+dialog.setCanceledOnTouchOutside(false); // Disable outside click
+dialog.setCancelable(false); // Disable back button
+
+// Add explicit cancel button
+dialog.setButton(DialogInterface.BUTTON_NEGATIVE, "Cancel",
+    new DialogInterface.OnClickListener() {
+        @Override
+        public void onClick(DialogInterface dialogInterface, int which) {
+            handleLocationCancel(); // Custom cancel logic
+            dialogInterface.dismiss();
+        }
+    });
+
+dialog.show();
+```
+
+### Network Location Cancel Handling
+
+```java
+private void handleNetworkLocationCancel() {
+    // Stop all timers and location updates
+    if (networkAccuracyTimer != null) {
+        networkAccuracyTimer.cancel();
+    }
+
+    // Use best available location from collected samples
+    if (!networkLocationCandidates.isEmpty()) {
+        Location bestLocation = getBestNetworkLocation();
+        updateUI(bestLocation);
+        makeCenterToast("Using current network location", Toast.LENGTH_LONG);
+    } else {
+        showFallbackLocation(); // Use cached or approximate location
+    }
+}
+```
 
 ### Custom Location Request Configuration
 

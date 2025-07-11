@@ -5,6 +5,8 @@ import android.app.ProgressDialog;
 import android.content.DialogInterface;
 import android.content.pm.PackageManager;
 import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -29,6 +31,8 @@ import com.google.android.gms.maps.SupportMapFragment;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.MarkerOptions;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Timer;
 import java.util.TimerTask;
 
@@ -46,6 +50,8 @@ public class MapsActivity extends AppCompatActivity implements OnMapReadyCallbac
     private Timer timer;
     private float currentAccuracy = Float.MAX_VALUE;
     private boolean isNetworkMode = false;
+    private List<Location> networkLocationCandidates;
+    private Timer networkAccuracyTimer;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -221,19 +227,304 @@ public class MapsActivity extends AppCompatActivity implements OnMapReadyCallbac
     private void getNetworkLocation() {
         final String message = getString(R.string.please_wait_network);
         dialog = new ProgressDialog(MapsActivity.this);
-        dialog.setIcon(R.drawable.zona);
+        dialog.setIcon(R.drawable.blue_location_pin);
         dialog.setTitle(getString(R.string.fetching_network_location));
-        dialog.setMessage(message);
-        dialog.setProgressStyle(ProgressDialog.STYLE_SPINNER);
-        dialog.setCanceledOnTouchOutside(false);
+        dialog.setMessage(message + "\nExcluding GPS - Network only");
+        dialog.setProgressStyle(ProgressDialog.STYLE_HORIZONTAL);
+        dialog.setCanceledOnTouchOutside(false); // Disable outside click cancellation
+        dialog.setCancelable(false); // Disable back button cancellation
+
+        // Add explicit cancel button
+        dialog.setButton(DialogInterface.BUTTON_NEGATIVE, "Cancel", new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialogInterface, int which) {
+                handleNetworkLocationCancel();
+                dialogInterface.dismiss();
+            }
+        });
+
         dialog.show();
 
-        // Use network-based location (cell towers, WiFi, IP)
-        startNetworkLocationUpdates();
+        // Initialize network location candidates list
+        networkLocationCandidates = new ArrayList<>();
+
+        // Use STRICT network-only location with accuracy improvement
+        startNetworkLocationWithAccuracyImprovement();
+    }
+
+    private void handleNetworkLocationCancel() {
+        // Stop all location updates
+        if (networkAccuracyTimer != null) {
+            networkAccuracyTimer.cancel();
+        }
+
+        LocationManager locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
+        try {
+            locationManager.removeUpdates(new LocationListener() {
+                @Override public void onLocationChanged(@NonNull Location location) {}
+                @Override public void onProviderEnabled(@NonNull String provider) {}
+                @Override public void onProviderDisabled(@NonNull String provider) {}
+            });
+        } catch (Exception e) {
+            // Ignore cleanup errors
+        }
+
+        // Use best available location or show current area
+        if (!networkLocationCandidates.isEmpty()) {
+            Location bestLocation = getBestNetworkLocation();
+            updateUI(bestLocation);
+            String source = getLocationSource(bestLocation);
+            makeCenterToast("Using current network location from " + source +
+                          " (Accuracy: " + (int)bestLocation.getAccuracy() + "m)",
+                          Toast.LENGTH_LONG);
+        } else {
+            // No network location available, show a default location or last known
+            showFallbackLocation();
+        }
+    }
+
+    private void showFallbackLocation() {
+        LocationManager locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
+
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
+                == PackageManager.PERMISSION_GRANTED) {
+
+            // Try to get any last known location (excluding GPS)
+            Location lastNetworkLocation = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
+            Location lastPassiveLocation = locationManager.getLastKnownLocation(LocationManager.PASSIVE_PROVIDER);
+
+            Location fallbackLocation = null;
+
+            if (lastNetworkLocation != null && !isLocationFromGPS(lastNetworkLocation)) {
+                fallbackLocation = lastNetworkLocation;
+            } else if (lastPassiveLocation != null && !isLocationFromGPS(lastPassiveLocation)) {
+                fallbackLocation = lastPassiveLocation;
+            }
+
+            if (fallbackLocation != null) {
+                updateUI(fallbackLocation);
+                long locationAge = (System.currentTimeMillis() - fallbackLocation.getTime()) / 1000 / 60; // minutes
+                makeCenterToast("Using cached network location (" + locationAge + " min old, " +
+                              (int)fallbackLocation.getAccuracy() + "m accuracy)", Toast.LENGTH_LONG);
+            } else {
+                // Show approximate location based on IP or default area
+                showApproximateLocation();
+            }
+        } else {
+            showApproximateLocation();
+        }
+    }
+
+    private void showApproximateLocation() {
+        // Show a default location (you can customize this to your region)
+        // For example, showing a major city center as fallback
+        LatLng defaultLocation = new LatLng(40.7128, -74.0060); // New York City as example
+
+        if (mMap != null) {
+            mMap.clear();
+            mMap.addMarker(new MarkerOptions()
+                    .position(defaultLocation)
+                    .title("Approximate Location")
+                    .snippet("Network location unavailable - showing general area"));
+
+            mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(defaultLocation, 10));
+            locationInfoTextView.setText("Approximate location shown\nEnable location services for accuracy");
+        }
+
+        makeCenterToast("Network location unavailable - showing approximate area", Toast.LENGTH_LONG);
+    }
+
+    private void startNetworkLocationWithAccuracyImprovement() {
+        LocationManager locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
+
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
+                != PackageManager.PERMISSION_GRANTED) {
+            return;
+        }
+
+        // Create location listener for network provider only
+        LocationListener networkLocationListener = new LocationListener() {
+            @Override
+            public void onLocationChanged(@NonNull Location location) {
+                // Double-check this is not from GPS
+                if (!isLocationFromGPS(location)) {
+                    // Add to candidates list for accuracy improvement
+                    networkLocationCandidates.add(location);
+                    currentLocation = location;
+                    currentAccuracy = location.getAccuracy();
+
+                    // Update progress and message
+                    uiHandler.post(() -> {
+                        if (dialog != null && dialog.isShowing()) {
+                            String source = getLocationSource(location);
+                            dialog.setMessage("Network location from " + source +
+                                            "\nCurrent Accuracy: " + (int)location.getAccuracy() + "m" +
+                                            "\nWaiting for better accuracy...");
+                        }
+                    });
+                } else {
+                    makeCenterToast("Rejecting GPS location, waiting for network...", Toast.LENGTH_SHORT);
+                }
+            }
+
+            @Override
+            public void onProviderEnabled(@NonNull String provider) {}
+
+            @Override
+            public void onProviderDisabled(@NonNull String provider) {
+                makeCenterToast("Network provider disabled", Toast.LENGTH_SHORT);
+            }
+        };
+
+        // Request location updates from NETWORK provider ONLY
+        try {
+            // First try to get last known network location
+            Location lastNetworkLocation = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
+            if (lastNetworkLocation != null && !isLocationFromGPS(lastNetworkLocation)) {
+                // Use cached network location if available and not too old
+                long locationAge = System.currentTimeMillis() - lastNetworkLocation.getTime();
+                if (locationAge < 300000) { // Less than 5 minutes old
+                    networkLocationCandidates.add(lastNetworkLocation);
+                }
+            }
+
+            // Request fresh network location with frequent updates for accuracy improvement
+            locationManager.requestLocationUpdates(
+                LocationManager.NETWORK_PROVIDER,
+                3000,  // 3 second intervals for better accuracy sampling
+                0,     // No minimum distance
+                networkLocationListener,
+                Looper.getMainLooper()
+            );
+
+            // Fallback to passive provider (cached locations from other apps)
+            locationManager.requestLocationUpdates(
+                LocationManager.PASSIVE_PROVIDER,
+                5000,  // 5 second intervals
+                0,     // No minimum distance
+                networkLocationListener,
+                Looper.getMainLooper()
+            );
+
+            // Start accuracy improvement timer
+            startNetworkAccuracyMonitoring(locationManager, networkLocationListener);
+
+        } catch (Exception e) {
+            makeCenterToast("Network location not available", Toast.LENGTH_LONG);
+            if (dialog != null && dialog.isShowing()) {
+                dialog.dismiss();
+            }
+        }
+    }
+
+    private void startNetworkAccuracyMonitoring(LocationManager locationManager, LocationListener listener) {
+        networkAccuracyTimer = new Timer(true);
+        final TimerTask accuracyTask = new TimerTask() {
+            private int elapsedSeconds = 0;
+
+            @Override
+            public void run() {
+                elapsedSeconds += 3;
+
+                uiHandler.post(() -> {
+                    // Check if dialog was cancelled
+                    if (dialog == null || !dialog.isShowing()) {
+                        locationManager.removeUpdates(listener);
+                        networkAccuracyTimer.cancel();
+                        return;
+                    }
+
+                    if (networkLocationCandidates.isEmpty()) {
+                        // No location yet, update progress
+                        int progress = Math.min((elapsedSeconds * 100) / 45, 30); // Max 30% until first location
+                        dialog.setProgress(progress);
+                        dialog.setMessage("Searching for network location...\nElapsed: " + elapsedSeconds + "s\nClick Cancel button to stop waiting");
+                        return;
+                    }
+
+                    // Find best accuracy location from candidates
+                    Location bestLocation = getBestNetworkLocation();
+                    float bestAccuracy = bestLocation.getAccuracy();
+                    String source = getLocationSource(bestLocation);
+
+                    // Update progress based on accuracy improvement
+                    int progress = calculateNetworkProgress(bestAccuracy, elapsedSeconds);
+                    dialog.setProgress(progress);
+                    dialog.setMessage("Improving accuracy from " + source +
+                                    "\nCurrent: " + (int)bestAccuracy + "m" +
+                                    "\nElapsed: " + elapsedSeconds + "s" +
+                                    "\nClick Cancel to use current location");
+
+                    // Check if we should complete based on accuracy or time
+                    boolean shouldComplete = false;
+
+                    if (bestAccuracy <= 100) { // Very good network accuracy
+                        shouldComplete = true;
+                    } else if (bestAccuracy <= 300 && elapsedSeconds >= 15) { // Good accuracy after 15s
+                        shouldComplete = true;
+                    } else if (bestAccuracy <= 500 && elapsedSeconds >= 30) { // Acceptable accuracy after 30s
+                        shouldComplete = true;
+                    } else if (elapsedSeconds >= 45) { // Timeout after 45s
+                        shouldComplete = true;
+                    }
+
+                    if (shouldComplete) {
+                        // Complete with best location found
+                        locationManager.removeUpdates(listener);
+                        networkAccuracyTimer.cancel();
+
+                        dialog.setProgress(100);
+                        dialog.dismiss();
+
+                        updateUI(bestLocation);
+                        makeCenterToast("Best network location from " + source +
+                                      " (Accuracy: " + (int)bestLocation.getAccuracy() + "m)",
+                                      Toast.LENGTH_LONG);
+                    }
+                });
+            }
+        };
+
+        networkAccuracyTimer.schedule(accuracyTask, 0, 3000); // Check every 3 seconds
+    }
+
+    private Location getBestNetworkLocation() {
+        if (networkLocationCandidates.isEmpty()) {
+            return currentLocation;
+        }
+
+        Location bestLocation = networkLocationCandidates.get(0);
+        for (Location candidate : networkLocationCandidates) {
+            // Prefer more recent locations with better accuracy
+            long timeDiff = candidate.getTime() - bestLocation.getTime();
+            float accuracyDiff = bestLocation.getAccuracy() - candidate.getAccuracy();
+
+            // Choose candidate if it's significantly more accurate or much more recent
+            if (accuracyDiff > 50 || (timeDiff > 10000 && accuracyDiff > -100)) {
+                bestLocation = candidate;
+            }
+        }
+
+        return bestLocation;
+    }
+
+    private int calculateNetworkProgress(float accuracy, int elapsedSeconds) {
+        int baseProgress = Math.min((elapsedSeconds * 100) / 45, 90); // Time-based progress
+
+        // Accuracy bonus
+        int accuracyBonus = 0;
+        if (accuracy <= 100) accuracyBonus = 10;
+        else if (accuracy <= 200) accuracyBonus = 8;
+        else if (accuracy <= 300) accuracyBonus = 6;
+        else if (accuracy <= 500) accuracyBonus = 4;
+        else if (accuracy <= 1000) accuracyBonus = 2;
+
+        return Math.min(baseProgress + accuracyBonus, 100);
     }
 
     private void startNetworkLocationUpdates() {
-        LocationRequest locationRequest = new LocationRequest.Builder(Priority.PRIORITY_BALANCED_POWER_ACCURACY, 10000)
+        // Create location request that STRICTLY excludes GPS
+        LocationRequest locationRequest = new LocationRequest.Builder(Priority.PRIORITY_LOW_POWER, 10000)
                 .setWaitForAccurateLocation(false)
                 .setMinUpdateIntervalMillis(5000)
                 .setMaxUpdateDelayMillis(15000)
@@ -247,10 +538,17 @@ public class MapsActivity extends AppCompatActivity implements OnMapReadyCallbac
                 public void onLocationResult(@NonNull LocationResult locationResult) {
                     if (locationResult != null && !locationResult.getLocations().isEmpty()) {
                         Location location = locationResult.getLocations().get(0);
+
+                        // STRICT CHECK: Reject GPS-based locations
+                        if (isLocationFromGPS(location)) {
+                            makeCenterToast("GPS location detected, waiting for network location...", Toast.LENGTH_SHORT);
+                            return; // Skip GPS locations
+                        }
+
                         currentLocation = location;
                         currentAccuracy = location.getAccuracy();
 
-                        // Stop updates after getting first result
+                        // Stop updates after getting first network result
                         fusedLocationClient.removeLocationUpdates(this);
 
                         uiHandler.post(() -> {
@@ -258,7 +556,8 @@ public class MapsActivity extends AppCompatActivity implements OnMapReadyCallbac
                                 dialog.dismiss();
                             }
                             updateUI(location);
-                            makeCenterToast(getString(R.string.network_location_found) +
+                            String source = getLocationSource(location);
+                            makeCenterToast("Network location found from " + source +
                                           " (Accuracy: " + (int)location.getAccuracy() + "m)",
                                           Toast.LENGTH_LONG);
                         });
@@ -270,9 +569,51 @@ public class MapsActivity extends AppCompatActivity implements OnMapReadyCallbac
             uiHandler.postDelayed(() -> {
                 if (dialog != null && dialog.isShowing()) {
                     dialog.dismiss();
-                    makeCenterToast(getString(R.string.network_location_failed), Toast.LENGTH_LONG);
+                    makeCenterToast("Network location timeout. Try moving to area with better cell/WiFi coverage.",
+                                  Toast.LENGTH_LONG);
                 }
-            }, 15000); // 15 second timeout
+            }, 20000); // 20 second timeout for network-only
+        }
+    }
+
+    private boolean isLocationFromGPS(Location location) {
+        // Check if location provider is GPS
+        String provider = location.getProvider();
+        if (provider != null && provider.equals("gps")) {
+            return true;
+        }
+
+        // Additional check: GPS locations typically have very high accuracy (< 20m)
+        // and are obtained quickly, while network locations are usually > 50m accuracy
+        if (location.getAccuracy() < 20 && location.getTime() > (System.currentTimeMillis() - 30000)) {
+            return true; // Likely GPS if very accurate and recent
+        }
+
+        return false;
+    }
+
+    private String getLocationSource(Location location) {
+        String provider = location.getProvider();
+        if (provider != null) {
+            switch (provider.toLowerCase()) {
+                case "network":
+                    return "Cell Tower/WiFi";
+                case "passive":
+                    return "Cached Network";
+                case "fused":
+                    return "Network Services";
+                default:
+                    return "Network Provider";
+            }
+        }
+
+        // Determine source based on accuracy
+        if (location.getAccuracy() > 1000) {
+            return "IP Geolocation";
+        } else if (location.getAccuracy() > 100) {
+            return "Cell Tower";
+        } else {
+            return "WiFi Network";
         }
     }
 
@@ -280,11 +621,26 @@ public class MapsActivity extends AppCompatActivity implements OnMapReadyCallbac
         if (isGPSEnabled()) {
             final String message = getString(R.string.please_wait_fetching);
             dialog = new ProgressDialog(MapsActivity.this);
-            dialog.setIcon(R.drawable.zona);
+            dialog.setIcon(R.drawable.blue_location_pin);
             dialog.setTitle(getString(R.string.fetching_location));
             dialog.setMessage(message);
             dialog.setProgressStyle(ProgressDialog.STYLE_HORIZONTAL);
             dialog.setCanceledOnTouchOutside(false);
+            dialog.setCancelable(false);
+
+            // Add explicit cancel button for GPS mode too
+            dialog.setButton(DialogInterface.BUTTON_NEGATIVE, "Cancel", new DialogInterface.OnClickListener() {
+                @Override
+                public void onClick(DialogInterface dialogInterface, int which) {
+                    stopLocationUpdates();
+                    if (timer != null) {
+                        timer.cancel();
+                    }
+                    dialogInterface.dismiss();
+                    makeCenterToast("Location search cancelled", Toast.LENGTH_SHORT);
+                }
+            });
+
             dialog.show();
 
             startLocationUpdates();
@@ -295,16 +651,15 @@ public class MapsActivity extends AppCompatActivity implements OnMapReadyCallbac
                 public void run() {
                     uiHandler.post(new Runnable() {
                         public void run() {
-                            dialog.setMessage(message + "\nCurrent Accuracy : " + getCurrentAccuracy() + "m");
-                            dialog.setOnCancelListener(new DialogInterface.OnCancelListener() {
-                                public void onCancel(DialogInterface dialog) {
-                                    stopLocationUpdates();
-                                    timer.cancel();
-                                    makeCenterToast("Please Wait ...", Toast.LENGTH_SHORT);
-                                }
-                            });
-
-                            updateProgressBasedOnAccuracy();
+                            if (dialog != null && dialog.isShowing()) {
+                                dialog.setMessage(message + "\nCurrent Accuracy : " + getCurrentAccuracy() + "m" +
+                                                "\nClick Cancel button to stop");
+                                updateProgressBasedOnAccuracy();
+                            } else {
+                                // Dialog was dismissed, stop the timer
+                                timer.cancel();
+                                stopLocationUpdates();
+                            }
                         }
                     });
                 }
@@ -421,6 +776,9 @@ public class MapsActivity extends AppCompatActivity implements OnMapReadyCallbac
         super.onDestroy();
         if (timer != null) {
             timer.cancel();
+        }
+        if (networkAccuracyTimer != null) {
+            networkAccuracyTimer.cancel();
         }
         stopLocationUpdates();
         if (dialog != null && dialog.isShowing()) {

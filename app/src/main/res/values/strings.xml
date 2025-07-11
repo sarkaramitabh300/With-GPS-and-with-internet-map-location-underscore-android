@@ -9,9 +9,19 @@
     <string name="please_wait_fetching">Please wait...Fetching Accurate Location</string>
     <string name="gps_disabled">GPS is Disabled, Enable it from Settings</string>
     <string name="open_map_network_button">Open Map (Network)</string>
-    <string name="network_location_info">Green button uses cell towers, WiFi, and IP location (no GPS required)</string>
-    <string name="fetching_network_location">Fetching Network Location</string>
-    <string name="please_wait_network">Please wait...Getting location from network</string>
+    <string name="network_location_info">Green button uses ONLY cell towers, WiFi, and IP location (GPS strictly excluded)</string>
+    <string name="fetching_network_location">Fetching Network Location (No GPS)</string>
+    <string name="please_wait_network">Please wait...Improving network location accuracy</string>
     <string name="network_location_found">Network location found</string>
     <string name="network_location_failed">Failed to get network location</string>
+    <string name="gps_rejected">GPS location rejected - using network only</string>
+    <string name="network_timeout">Network location timeout - check WiFi/cellular</string>
+    <string name="cancel_waiting">Cancel Waiting</string>
+    <string name="using_current_location">Using current network location</string>
+    <string name="using_cached_location">Using cached network location</string>
+    <string name="approximate_location_shown">Approximate location shown</string>
+    <string name="tap_cancel_to_stop">Click Cancel button to stop waiting and use current location</string>
+    <string name="cancel_button">Cancel</string>
+    <string name="location_search_cancelled">Location search cancelled</string>
+    <string name="click_cancel_to_stop">Click Cancel button to stop</string>
 </resources>
