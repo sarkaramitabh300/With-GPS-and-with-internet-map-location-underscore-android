@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/white">
+
+    <!-- Header -->
+    <LinearLayout
+        android:id="@+id/header_layout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentTop="true"
+        android:orientation="vertical"
+        android:background="@android:color/holo_blue_light"
+        android:padding="16dp"
+        android:elevation="4dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Downloaded Maps"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:textColor="@android:color/white"
+            android:layout_gravity="center" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Tap to open • Long press for options"
+            android:textSize="14sp"
+            android:textColor="@android:color/white"
+            android:layout_gravity="center"
+            android:layout_marginTop="4dp"
+            android:alpha="0.9" />
+
+    </LinearLayout>
+
+    <!-- RecyclerView for maps list -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/recycler_view_maps"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_below="@id/header_layout"
+        android:padding="8dp"
+        android:clipToPadding="false"
+        android:scrollbars="vertical" />
+
+    <!-- Empty state -->
+    <TextView
+        android:id="@+id/tv_empty_state"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_centerInParent="true"
+        android:text="No downloaded maps found.\n\nGo to Maps and download some areas for offline use!"
+        android:textSize="16sp"
+        android:textColor="@android:color/darker_gray"
+        android:gravity="center"
+        android:padding="32dp"
+        android:visibility="gone"
+        android:drawableTop="@android:drawable/ic_dialog_map"
+        android:drawablePadding="16dp" />
+
+</RelativeLayout>

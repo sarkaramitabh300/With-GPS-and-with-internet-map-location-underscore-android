@@ -43,6 +43,19 @@
         android:elevation="4dp"
         android:layout_marginBottom="16dp" />
 
+    <Button
+        android:id="@+id/btn_view_downloaded_maps"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/view_downloaded_maps"
+        android:textSize="18sp"
+        android:padding="16dp"
+        android:minWidth="250dp"
+        android:background="@android:color/holo_purple"
+        android:textColor="@android:color/white"
+        android:elevation="4dp"
+        android:layout_marginBottom="24dp" />
+
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"

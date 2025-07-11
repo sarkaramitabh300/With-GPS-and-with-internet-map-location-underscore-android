@@ -29,4 +29,7 @@
     <string name="downloading_offline_map">Downloading Offline Map</string>
     <string name="offline_map_downloaded">Offline map downloaded successfully!</string>
     <string name="offline_map_failed">Failed to download offline map</string>
+    <string name="internet_required_download">Internet connection required to download offline maps</string>
+    <string name="no_internet_connection">No internet connection available</string>
+    <string name="view_downloaded_maps">View Downloaded Maps</string>
 </resources>

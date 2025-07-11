@@ -84,25 +84,48 @@ private String getLocationSource(Location location) {
 - **Storage Optimization**: Efficient map tile storage and management
 - **Alternative Solutions**: Complete guide for full offline map implementations
 
+### 🏷️ **NEW: Map Labeling & Management System**
+- **Custom Map Labels**: Label downloaded maps with memorable names before downloading
+- **Map Description**: Add optional descriptions to provide context for saved maps
+- **Downloaded Maps List**: View all saved maps with their labels, locations, and details
+- **Smart Map Organization**: Maps sorted by download date with comprehensive metadata
+- **Map Details View**: Complete information including location, map type, zoom level, and download date
+- **Quick Map Access**: Tap any saved map to instantly navigate to that location
+- **Map Management**: Long-press for options including view details and delete functionality
+- **Duplicate Prevention**: System prevents saving maps with duplicate labels
+- **Persistent Storage**: SQLite database ensures maps persist across app sessions
+- **Map Type Preservation**: Saves and restores exact map type (Normal, Satellite, Hybrid, Terrain)
+- **Zoom Level Memory**: Remembers and restores the exact zoom level when viewing saved maps
+
 ## 🏗️ Architecture Overview
 
 ```
 MyApplication/
 ├── app/src/main/
 │   ├── java/com/example/myapplication/
-│   │   ├── HomeActivity.java          # Main launcher activity
-│   │   └── MapsActivity.java          # Maps and location handling
+│   │   ├── HomeActivity.java              # Main launcher activity
+│   │   ├── MapsActivity.java              # Maps and location handling
+│   │   ├── DownloadedMapsActivity.java    # Downloaded maps list and management
+│   │   ├── adapter/
+│   │   │   └── MapListAdapter.java        # RecyclerView adapter for maps list
+│   │   ├── database/
+│   │   │   └── MapDatabaseHelper.java     # SQLite database for map storage
+│   │   └── model/
+│   │       └── DownloadedMap.java         # Data model for downloaded maps
 │   ├── res/
 │   │   ├── layout/
-│   │   │   ├── activity_home.xml      # Home screen layout
-│   │   │   └── activity_maps.xml      # Maps screen layout
+│   │   │   ├── activity_home.xml          # Home screen layout
+│   │   │   ├── activity_maps.xml          # Maps screen layout
+│   │   │   ├── activity_downloaded_maps.xml # Downloaded maps list layout
+│   │   │   ├── item_downloaded_map.xml    # Individual map item layout
+│   │   │   └── dialog_map_label.xml       # Map labeling dialog layout
 │   │   ├── values/
-│   │   │   └── strings.xml            # String resources
+│   │   │   └── strings.xml                # String resources
 │   │   └── drawable/
-│   │       └── zona.xml               # Location icon
-│   └── AndroidManifest.xml            # App configuration
-├── build.gradle.kts                   # Dependencies
-└── README.md                          # This file
+│   │       └── zona.xml                   # Location icon
+│   └── AndroidManifest.xml                # App configuration
+├── build.gradle.kts                       # Dependencies
+└── README.md                              # This file
 ```
 
 ## 🗺️ Offline Maps Documentation
@@ -112,18 +135,22 @@ MyApplication/
 #### **Step-by-Step Guide for Users**
 
 1. **Prepare for Download**
-   - Ensure you have a stable internet connection (WiFi recommended)
-   - Have sufficient device storage (50-200 MB per area)
-   - Know the areas you want to download
+   - **Internet Required**: Stable internet connection mandatory (WiFi recommended)
+   - **Storage Check**: Sufficient device storage (50-200 MB per area)
+   - **Area Planning**: Know the areas you want to download
+   - **Download Button**: Only visible when internet connection is available
 
 2. **Download Maps Using the App**
    ```
    1. Open the app and navigate to Maps screen
-   2. Get your current location or navigate to desired area
-   3. Click the purple "Download Offline Map" button
-   4. Choose "Enable Map Caching" in the dialog
-   5. Wait for the caching process to complete
+   2. Ensure internet connection is active (button will be visible)
+   3. Get your current location or navigate to desired area
+   4. Click the purple "Download Offline Map" button (only visible with internet)
+   5. Choose "Enable Map Caching" in the dialog
+   6. Wait for the caching process to complete
    ```
+
+   **Note**: If no internet connection is available, the download button will be hidden automatically.
 
 3. **Manual Area Pre-loading**
    ```

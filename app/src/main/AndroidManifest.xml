@@ -6,6 +6,7 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <application
         android:allowBackup="true"
@@ -36,6 +37,12 @@
         <activity
             android:name=".MapsActivity"
             android:exported="false" />
+
+        <!-- Downloaded Maps Activity -->
+        <activity
+            android:name=".DownloadedMapsActivity"
+            android:exported="false"
+            android:parentActivityName=".HomeActivity" />
 
     </application>
 

@@ -17,6 +17,7 @@ public class HomeActivity extends AppCompatActivity {
     private static final int LOCATION_PERMISSION_REQUEST_CODE = 1001;
     private Button openMapButton;
     private Button openMapNetworkButton;
+    private Button viewDownloadedMapsButton;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -30,6 +31,7 @@ public class HomeActivity extends AppCompatActivity {
     private void initializeViews() {
         openMapButton = findViewById(R.id.btn_open_map);
         openMapNetworkButton = findViewById(R.id.btn_open_map_network);
+        viewDownloadedMapsButton = findViewById(R.id.btn_view_downloaded_maps);
     }
 
     private void setupClickListeners() {
@@ -48,6 +50,10 @@ public class HomeActivity extends AppCompatActivity {
             } else {
                 requestCoarseLocationPermission();
             }
+        });
+
+        viewDownloadedMapsButton.setOnClickListener(v -> {
+            openDownloadedMapsActivity();
         });
     }
 
@@ -81,6 +87,11 @@ public class HomeActivity extends AppCompatActivity {
     private void openMapsActivity(boolean networkMode) {
         Intent intent = new Intent(this, MapsActivity.class);
         intent.putExtra("NETWORK_MODE", networkMode);
+        startActivity(intent);
+    }
+
+    private void openDownloadedMapsActivity() {
+        Intent intent = new Intent(this, DownloadedMapsActivity.class);
         startActivity(intent);
     }
 

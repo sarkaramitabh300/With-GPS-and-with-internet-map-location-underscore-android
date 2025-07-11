@@ -2,21 +2,31 @@ package com.example.myapplication;
 
 import android.Manifest;
 import android.app.ProgressDialog;
+import android.content.Context;
 import android.content.DialogInterface;
 import android.content.pm.PackageManager;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.LayoutInflater;
+import android.view.View;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
+
+import com.example.myapplication.database.MapDatabaseHelper;
+import com.example.myapplication.model.DownloadedMap;
 
 import com.google.android.gms.location.FusedLocationProviderClient;
 import com.google.android.gms.location.LocationCallback;
@@ -54,6 +64,7 @@ public class MapsActivity extends AppCompatActivity implements OnMapReadyCallbac
     private boolean isNetworkMode = false;
     private List<Location> networkLocationCandidates;
     private Timer networkAccuracyTimer;
+    private MapDatabaseHelper databaseHelper;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -63,9 +74,15 @@ public class MapsActivity extends AppCompatActivity implements OnMapReadyCallbac
         // Check if we're in network mode
         isNetworkMode = getIntent().getBooleanExtra("NETWORK_MODE", false);
 
+        // Initialize database helper
+        databaseHelper = MapDatabaseHelper.getInstance(this);
+
         initializeViews();
         initializeLocationServices();
         setupMap();
+
+        // Check if we should open a saved map
+        handleSavedMapIntent();
     }
 
     private void initializeViews() {
@@ -83,6 +100,7 @@ public class MapsActivity extends AppCompatActivity implements OnMapReadyCallbac
 
         setupClickListeners();
         updateUIForMode();
+        updateDownloadButtonVisibility();
     }
 
     private void updateUIForMode() {
@@ -198,6 +216,19 @@ public class MapsActivity extends AppCompatActivity implements OnMapReadyCallbac
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
                 == PackageManager.PERMISSION_GRANTED) {
             mMap.setMyLocationEnabled(true);
+        }
+
+        // Check if we have a pending saved map to open
+        if (getIntent().getBooleanExtra("PENDING_SAVED_MAP", false)) {
+            double lat = getIntent().getDoubleExtra("MAP_CENTER_LAT", 0);
+            double lng = getIntent().getDoubleExtra("MAP_CENTER_LNG", 0);
+            int zoomLevel = getIntent().getIntExtra("MAP_ZOOM_LEVEL", 15);
+            String mapType = getIntent().getStringExtra("MAP_TYPE");
+            String mapLabel = getIntent().getStringExtra("MAP_LABEL");
+
+            if (lat != 0 && lng != 0) {
+                openSavedMap(lat, lng, zoomLevel, mapType, mapLabel);
+            }
         }
     }
 
@@ -534,6 +565,13 @@ public class MapsActivity extends AppCompatActivity implements OnMapReadyCallbac
             return;
         }
 
+        // Double-check internet connectivity
+        if (!isInternetAvailable()) {
+            makeCenterToast("Internet connection required to download offline maps", Toast.LENGTH_LONG);
+            updateDownloadButtonVisibility(); // Hide button if no internet
+            return;
+        }
+
         // Get current map bounds or use current location area
         LatLngBounds bounds;
         if (currentLocation != null) {
@@ -551,52 +589,97 @@ public class MapsActivity extends AppCompatActivity implements OnMapReadyCallbac
             bounds = mMap.getProjection().getVisibleRegion().latLngBounds;
         }
 
-        // Show download confirmation dialog
-        showOfflineMapDownloadDialog(bounds);
+        // Show map labeling dialog
+        showMapLabelingDialog(bounds);
     }
 
-    private void showOfflineMapDownloadDialog(LatLngBounds bounds) {
-        android.app.AlertDialog.Builder builder = new android.app.AlertDialog.Builder(this);
-        builder.setTitle("Download Offline Map");
-        builder.setMessage("Download map for offline use?\n\n" +
-                          "Area: Current location ± 5km\n" +
-                          "Size: Approximately 10-50 MB\n" +
-                          "Note: Requires internet connection to download");
+    private void showMapLabelingDialog(LatLngBounds bounds) {
+        // Inflate the custom dialog layout
+        LayoutInflater inflater = getLayoutInflater();
+        View dialogView = inflater.inflate(R.layout.dialog_map_label, null);
 
-        builder.setPositiveButton("Download", (dialog, which) -> {
-            startOfflineMapDownload(bounds);
-        });
+        // Get references to dialog views
+        EditText labelEditText = dialogView.findViewById(R.id.et_map_label);
+        EditText descriptionEditText = dialogView.findViewById(R.id.et_map_description);
+        TextView locationTextView = dialogView.findViewById(R.id.tv_map_info_location);
+        TextView typeTextView = dialogView.findViewById(R.id.tv_map_info_type);
+        TextView sizeTextView = dialogView.findViewById(R.id.tv_map_info_size);
 
-        builder.setNegativeButton("Cancel", (dialog, which) -> {
+        // Set map information
+        LatLng center = bounds.getCenter();
+        locationTextView.setText(String.format("Location: %.4f, %.4f", center.latitude, center.longitude));
+        typeTextView.setText("Type: " + getCurrentMapTypeString());
+        sizeTextView.setText("Area: ~10km radius");
+
+        // Create and show dialog
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setView(dialogView);
+        builder.setCancelable(false); // Make dialog not dismissible by clicking outside
+
+        AlertDialog dialog = builder.create();
+
+        // Set up button click listeners
+        Button cancelButton = dialogView.findViewById(R.id.btn_cancel);
+        Button downloadButton = dialogView.findViewById(R.id.btn_download);
+
+        cancelButton.setOnClickListener(v -> dialog.dismiss());
+
+        downloadButton.setOnClickListener(v -> {
+            String label = labelEditText.getText().toString().trim();
+            String description = descriptionEditText.getText().toString().trim();
+
+            if (label.isEmpty()) {
+                labelEditText.setError("Map label is required");
+                return;
+            }
+
+            // Check if label already exists
+            if (databaseHelper.isMapLabelExists(label)) {
+                labelEditText.setError("A map with this label already exists");
+                return;
+            }
+
             dialog.dismiss();
+            startOfflineMapDownloadWithLabel(bounds, label, description);
         });
 
-        builder.show();
+        dialog.show();
     }
 
-    private void startOfflineMapDownload(LatLngBounds bounds) {
-        // Show information dialog about offline maps
-        android.app.AlertDialog.Builder infoBuilder = new android.app.AlertDialog.Builder(this);
-        infoBuilder.setTitle("Offline Maps Information");
-        infoBuilder.setMessage("For true offline maps functionality, consider:\n\n" +
-                              "1. Google Maps Go (Lite version with offline support)\n" +
-                              "2. OpenStreetMap-based solutions (OSMDroid)\n" +
-                              "3. Mapbox SDK (has offline capabilities)\n\n" +
-                              "Current Google Maps SDK has limited offline support.\n" +
-                              "Maps will cache automatically when viewed with internet.");
+    private void startOfflineMapDownloadWithLabel(LatLngBounds bounds, String label, String description) {
+        // Create DownloadedMap object
+        LatLng center = bounds.getCenter();
+        LatLng northeast = bounds.northeast;
+        LatLng southwest = bounds.southwest;
 
-        infoBuilder.setPositiveButton("Enable Map Caching", (dialog, which) -> {
-            enableMapCaching();
-        });
+        DownloadedMap downloadedMap = new DownloadedMap(
+            label,
+            center.latitude,
+            center.longitude,
+            northeast.latitude,
+            northeast.longitude,
+            southwest.latitude,
+            southwest.longitude,
+            getCurrentZoomLevel(),
+            getCurrentMapTypeString()
+        );
 
-        infoBuilder.setNegativeButton("OK", (dialog, which) -> {
-            dialog.dismiss();
-        });
+        if (description != null && !description.isEmpty()) {
+            downloadedMap.setDescription(description);
+        }
 
-        infoBuilder.show();
+        // Save to database
+        long mapId = databaseHelper.addDownloadedMap(downloadedMap);
+
+        if (mapId > 0) {
+            // Enable map caching and show success
+            enableMapCachingWithLabel(label);
+        } else {
+            Toast.makeText(this, "Failed to save map information", Toast.LENGTH_LONG).show();
+        }
     }
 
-    private void enableMapCaching() {
+    private void enableMapCachingWithLabel(String label) {
         // Enable map caching for better offline experience
         if (mMap != null) {
             // Google Maps automatically caches viewed areas
@@ -609,7 +692,7 @@ public class MapsActivity extends AppCompatActivity implements OnMapReadyCallbac
                 mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(center, zoom));
             }
 
-            makeCenterToast("Map caching enabled. Viewed areas will be cached for offline use.",
+            makeCenterToast("Map \"" + label + "\" saved successfully!\nViewed areas will be cached for offline use.",
                           Toast.LENGTH_LONG);
             updateDownloadButtonState(true);
         }
@@ -623,6 +706,44 @@ public class MapsActivity extends AppCompatActivity implements OnMapReadyCallbac
             downloadMapButton.setText(getString(R.string.download_offline_map));
             downloadMapButton.setBackgroundColor(getResources().getColor(android.R.color.holo_purple));
         }
+    }
+
+    private boolean isInternetAvailable() {
+        ConnectivityManager connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        if (connectivityManager != null) {
+            NetworkInfo activeNetworkInfo = connectivityManager.getActiveNetworkInfo();
+            return activeNetworkInfo != null && activeNetworkInfo.isConnected();
+        }
+        return false;
+    }
+
+    private void updateDownloadButtonVisibility() {
+        if (downloadMapButton != null) {
+            if (isInternetAvailable()) {
+                downloadMapButton.setVisibility(android.view.View.VISIBLE);
+                downloadMapButton.setText(getString(R.string.download_offline_map));
+                downloadMapButton.setBackgroundColor(getResources().getColor(android.R.color.holo_purple));
+                downloadMapButton.setEnabled(true);
+            } else {
+                // Hide the button completely when no internet
+                downloadMapButton.setVisibility(android.view.View.GONE);
+
+                // Update location info to show offline status
+                if (locationInfoTextView != null) {
+                    String currentText = locationInfoTextView.getText().toString();
+                    if (!currentText.contains("Offline")) {
+                        locationInfoTextView.setText(currentText + "\n(Offline - No map download available)");
+                    }
+                }
+            }
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // Update download button visibility when app resumes
+        updateDownloadButtonVisibility();
     }
 
     private void startNetworkLocationUpdates() {
@@ -872,6 +993,95 @@ public class MapsActivity extends AppCompatActivity implements OnMapReadyCallbac
     private void makeCenterToast(String message, int duration) {
         Toast toast = Toast.makeText(getApplicationContext(), message, duration);
         toast.show();
+    }
+
+    // Helper method to get current map type as string
+    private String getCurrentMapTypeString() {
+        if (mMap == null) return "HYBRID";
+
+        switch (mMap.getMapType()) {
+            case GoogleMap.MAP_TYPE_NORMAL:
+                return "NORMAL";
+            case GoogleMap.MAP_TYPE_SATELLITE:
+                return "SATELLITE";
+            case GoogleMap.MAP_TYPE_TERRAIN:
+                return "TERRAIN";
+            case GoogleMap.MAP_TYPE_HYBRID:
+            default:
+                return "HYBRID";
+        }
+    }
+
+    // Helper method to get current zoom level
+    private int getCurrentZoomLevel() {
+        if (mMap == null) return 15;
+        return Math.round(mMap.getCameraPosition().zoom);
+    }
+
+    // Handle intent to open saved map
+    private void handleSavedMapIntent() {
+        if (getIntent().getBooleanExtra("OPEN_SAVED_MAP", false)) {
+            double lat = getIntent().getDoubleExtra("MAP_CENTER_LAT", 0);
+            double lng = getIntent().getDoubleExtra("MAP_CENTER_LNG", 0);
+            int zoomLevel = getIntent().getIntExtra("MAP_ZOOM_LEVEL", 15);
+            String mapType = getIntent().getStringExtra("MAP_TYPE");
+            String mapLabel = getIntent().getStringExtra("MAP_LABEL");
+
+            if (lat != 0 && lng != 0) {
+                // Wait for map to be ready, then navigate to saved location
+                if (mMap != null) {
+                    openSavedMap(lat, lng, zoomLevel, mapType, mapLabel);
+                } else {
+                    // Store values to use when map is ready
+                    getIntent().putExtra("PENDING_SAVED_MAP", true);
+                }
+            }
+        }
+    }
+
+    // Open saved map at specified location
+    private void openSavedMap(double lat, double lng, int zoomLevel, String mapType, String mapLabel) {
+        if (mMap == null) return;
+
+        LatLng location = new LatLng(lat, lng);
+
+        // Set map type if specified
+        if (mapType != null) {
+            switch (mapType.toUpperCase()) {
+                case "NORMAL":
+                    mMap.setMapType(GoogleMap.MAP_TYPE_NORMAL);
+                    updateButtonStates(GoogleMap.MAP_TYPE_NORMAL);
+                    break;
+                case "SATELLITE":
+                    mMap.setMapType(GoogleMap.MAP_TYPE_SATELLITE);
+                    updateButtonStates(GoogleMap.MAP_TYPE_SATELLITE);
+                    break;
+                case "TERRAIN":
+                    mMap.setMapType(GoogleMap.MAP_TYPE_TERRAIN);
+                    updateButtonStates(GoogleMap.MAP_TYPE_TERRAIN);
+                    break;
+                case "HYBRID":
+                default:
+                    mMap.setMapType(GoogleMap.MAP_TYPE_HYBRID);
+                    updateButtonStates(GoogleMap.MAP_TYPE_HYBRID);
+                    break;
+            }
+        }
+
+        // Add marker and move camera
+        mMap.clear();
+        mMap.addMarker(new MarkerOptions()
+                .position(location)
+                .title(mapLabel != null ? mapLabel : "Saved Location")
+                .snippet("Saved map location"));
+
+        mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(location, zoomLevel));
+
+        // Update location info
+        locationInfoTextView.setText(String.format("Saved Map: %s\nLat: %.6f, Lng: %.6f\nZoom: %d",
+                mapLabel != null ? mapLabel : "Unknown", lat, lng, zoomLevel));
+
+        makeCenterToast("Opened saved map: " + (mapLabel != null ? mapLabel : "Unknown"), Toast.LENGTH_SHORT);
     }
 
     @Override
