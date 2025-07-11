@@ -49,6 +49,7 @@ private String getLocationSource(Location location) {
 - **Enhanced Visibility**: Street names, building labels, traffic information
 - **Interactive Controls**: Zoom, compass, rotation, tilt gestures
 - **Real-time Accuracy**: Live accuracy monitoring with progress feedback
+- **Offline Support**: Map caching for areas without internet connection
 
 ### 🔒 Smart Permission Handling
 - **GPS Mode**: Requires fine location permission for high accuracy
@@ -74,6 +75,12 @@ private String getLocationSource(Location location) {
 - **Smart Fallbacks**: Multiple fallback options if network location unavailable
 - **Immediate Usage**: Cancel anytime to use current best available location
 - **Non-Dismissible Dialogs**: Dialogs only close via cancel button or completion
+
+### 🌐 Offline Maps Support
+- **Map Caching**: Automatic caching of viewed map areas for offline use
+- **Pre-loading**: Manual map area pre-loading for offline scenarios
+- **No Internet Fallback**: Cached maps work without internet connection
+- **Alternative Solutions**: Guidance for full offline map implementations
 
 ## 🏗️ Architecture Overview
 

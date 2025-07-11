@@ -24,4 +24,9 @@
     <string name="cancel_button">Cancel</string>
     <string name="location_search_cancelled">Location search cancelled</string>
     <string name="click_cancel_to_stop">Click Cancel button to stop</string>
+    <string name="download_offline_map">Download Offline Map</string>
+    <string name="offline_map_available">Offline Map Available</string>
+    <string name="downloading_offline_map">Downloading Offline Map</string>
+    <string name="offline_map_downloaded">Offline map downloaded successfully!</string>
+    <string name="offline_map_failed">Failed to download offline map</string>
 </resources>

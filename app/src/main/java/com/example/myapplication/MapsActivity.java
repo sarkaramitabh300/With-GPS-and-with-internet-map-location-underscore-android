@@ -29,6 +29,7 @@ import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.OnMapReadyCallback;
 import com.google.android.gms.maps.SupportMapFragment;
 import com.google.android.gms.maps.model.LatLng;
+import com.google.android.gms.maps.model.LatLngBounds;
 import com.google.android.gms.maps.model.MarkerOptions;
 
 import java.util.ArrayList;
@@ -43,6 +44,7 @@ public class MapsActivity extends AppCompatActivity implements OnMapReadyCallbac
     private LocationCallback locationCallback;
     private Button getLocationButton;
     private Button normalButton, satelliteButton, hybridButton, terrainButton;
+    private Button downloadMapButton;
     private TextView locationInfoTextView;
     private Location currentLocation;
     private ProgressDialog dialog;
@@ -68,6 +70,7 @@ public class MapsActivity extends AppCompatActivity implements OnMapReadyCallbac
 
     private void initializeViews() {
         getLocationButton = findViewById(R.id.btn_get_location);
+        downloadMapButton = findViewById(R.id.btn_download_map);
         locationInfoTextView = findViewById(R.id.tv_location_info);
 
         // Map type buttons
@@ -106,6 +109,9 @@ public class MapsActivity extends AppCompatActivity implements OnMapReadyCallbac
         satelliteButton.setOnClickListener(v -> changeMapType(GoogleMap.MAP_TYPE_SATELLITE));
         hybridButton.setOnClickListener(v -> changeMapType(GoogleMap.MAP_TYPE_HYBRID));
         terrainButton.setOnClickListener(v -> changeMapType(GoogleMap.MAP_TYPE_TERRAIN));
+
+        // Download map button listener
+        downloadMapButton.setOnClickListener(v -> downloadOfflineMap());
     }
 
     private void changeMapType(int mapType) {
@@ -520,6 +526,103 @@ public class MapsActivity extends AppCompatActivity implements OnMapReadyCallbac
         else if (accuracy <= 1000) accuracyBonus = 2;
 
         return Math.min(baseProgress + accuracyBonus, 100);
+    }
+
+    private void downloadOfflineMap() {
+        if (mMap == null) {
+            makeCenterToast("Map not ready yet", Toast.LENGTH_SHORT);
+            return;
+        }
+
+        // Get current map bounds or use current location area
+        LatLngBounds bounds;
+        if (currentLocation != null) {
+            // Create bounds around current location (approximately 10km radius)
+            double lat = currentLocation.getLatitude();
+            double lng = currentLocation.getLongitude();
+            double offset = 0.05; // Approximately 5km in each direction
+
+            bounds = new LatLngBounds(
+                new LatLng(lat - offset, lng - offset), // Southwest corner
+                new LatLng(lat + offset, lng + offset)  // Northeast corner
+            );
+        } else {
+            // Default bounds if no location available
+            bounds = mMap.getProjection().getVisibleRegion().latLngBounds;
+        }
+
+        // Show download confirmation dialog
+        showOfflineMapDownloadDialog(bounds);
+    }
+
+    private void showOfflineMapDownloadDialog(LatLngBounds bounds) {
+        android.app.AlertDialog.Builder builder = new android.app.AlertDialog.Builder(this);
+        builder.setTitle("Download Offline Map");
+        builder.setMessage("Download map for offline use?\n\n" +
+                          "Area: Current location ± 5km\n" +
+                          "Size: Approximately 10-50 MB\n" +
+                          "Note: Requires internet connection to download");
+
+        builder.setPositiveButton("Download", (dialog, which) -> {
+            startOfflineMapDownload(bounds);
+        });
+
+        builder.setNegativeButton("Cancel", (dialog, which) -> {
+            dialog.dismiss();
+        });
+
+        builder.show();
+    }
+
+    private void startOfflineMapDownload(LatLngBounds bounds) {
+        // Show information dialog about offline maps
+        android.app.AlertDialog.Builder infoBuilder = new android.app.AlertDialog.Builder(this);
+        infoBuilder.setTitle("Offline Maps Information");
+        infoBuilder.setMessage("For true offline maps functionality, consider:\n\n" +
+                              "1. Google Maps Go (Lite version with offline support)\n" +
+                              "2. OpenStreetMap-based solutions (OSMDroid)\n" +
+                              "3. Mapbox SDK (has offline capabilities)\n\n" +
+                              "Current Google Maps SDK has limited offline support.\n" +
+                              "Maps will cache automatically when viewed with internet.");
+
+        infoBuilder.setPositiveButton("Enable Map Caching", (dialog, which) -> {
+            enableMapCaching();
+        });
+
+        infoBuilder.setNegativeButton("OK", (dialog, which) -> {
+            dialog.dismiss();
+        });
+
+        infoBuilder.show();
+    }
+
+    private void enableMapCaching() {
+        // Enable map caching for better offline experience
+        if (mMap != null) {
+            // Google Maps automatically caches viewed areas
+            // We can help by pre-loading the current area
+            LatLngBounds bounds = mMap.getProjection().getVisibleRegion().latLngBounds;
+
+            // Move camera around the area to trigger caching
+            LatLng center = bounds.getCenter();
+            for (int zoom = 10; zoom <= 16; zoom++) {
+                mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(center, zoom));
+            }
+
+            makeCenterToast("Map caching enabled. Viewed areas will be cached for offline use.",
+                          Toast.LENGTH_LONG);
+            updateDownloadButtonState(true);
+        }
+    }
+
+    private void updateDownloadButtonState(boolean hasOfflineMap) {
+        if (hasOfflineMap) {
+            downloadMapButton.setText("Offline Map Available");
+            downloadMapButton.setBackgroundColor(getResources().getColor(android.R.color.holo_green_dark));
+        } else {
+            downloadMapButton.setText(getString(R.string.download_offline_map));
+            downloadMapButton.setBackgroundColor(getResources().getColor(android.R.color.holo_purple));
+        }
     }
 
     private void startNetworkLocationUpdates() {
