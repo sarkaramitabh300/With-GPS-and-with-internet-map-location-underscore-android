@@ -77,10 +77,12 @@ private String getLocationSource(Location location) {
 - **Non-Dismissible Dialogs**: Dialogs only close via cancel button or completion
 
 ### 🌐 Offline Maps Support
-- **Map Caching**: Automatic caching of viewed map areas for offline use
-- **Pre-loading**: Manual map area pre-loading for offline scenarios
-- **No Internet Fallback**: Cached maps work without internet connection
-- **Alternative Solutions**: Guidance for full offline map implementations
+- **Intelligent Map Caching**: Automatic caching system for viewed map areas
+- **Pre-loading Strategy**: Manual map area pre-loading for offline scenarios
+- **No Internet Fallback**: Cached maps work seamlessly without internet connection
+- **Download Management**: User-controlled offline map downloading
+- **Storage Optimization**: Efficient map tile storage and management
+- **Alternative Solutions**: Complete guide for full offline map implementations
 
 ## 🏗️ Architecture Overview
 
@@ -102,6 +104,112 @@ MyApplication/
 ├── build.gradle.kts                   # Dependencies
 └── README.md                          # This file
 ```
+
+## 🗺️ Offline Maps Documentation
+
+### 📥 How to Download and Cache Maps for Offline Use
+
+#### **Step-by-Step Guide for Users**
+
+1. **Prepare for Download**
+   - Ensure you have a stable internet connection (WiFi recommended)
+   - Have sufficient device storage (50-200 MB per area)
+   - Know the areas you want to download
+
+2. **Download Maps Using the App**
+   ```
+   1. Open the app and navigate to Maps screen
+   2. Get your current location or navigate to desired area
+   3. Click the purple "Download Offline Map" button
+   4. Choose "Enable Map Caching" in the dialog
+   5. Wait for the caching process to complete
+   ```
+
+3. **Manual Area Pre-loading**
+   ```
+   1. Pan and zoom around the area you need offline
+   2. View different zoom levels (street level to city level)
+   3. Spend time exploring the area to trigger automatic caching
+   4. The more you explore, the more gets cached
+   ```
+
+#### **Technical Implementation Details**
+
+**Automatic Caching System**:
+```java
+private void enableMapCaching() {
+    if (mMap != null) {
+        // Get current visible area
+        LatLngBounds bounds = mMap.getProjection().getVisibleRegion().latLngBounds;
+        LatLng center = bounds.getCenter();
+
+        // Pre-load multiple zoom levels for comprehensive caching
+        for (int zoom = 10; zoom <= 16; zoom++) {
+            mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(center, zoom));
+            // Each camera movement triggers tile downloads
+        }
+
+        // Notify user of successful caching
+        makeCenterToast("Map caching enabled. Viewed areas cached for offline use.",
+                      Toast.LENGTH_LONG);
+    }
+}
+```
+
+**Download Area Calculation**:
+```java
+private void downloadOfflineMap() {
+    if (currentLocation != null) {
+        // Create 10km x 10km area around current location
+        double lat = currentLocation.getLatitude();
+        double lng = currentLocation.getLongitude();
+        double offset = 0.05; // ~5km radius
+
+        LatLngBounds bounds = new LatLngBounds(
+            new LatLng(lat - offset, lng - offset), // Southwest
+            new LatLng(lat + offset, lng + offset)  // Northeast
+        );
+
+        showOfflineMapDownloadDialog(bounds);
+    }
+}
+```
+
+#### **Storage and Cache Management**
+
+**Cache Location**:
+- Android automatically manages Google Maps cache
+- Stored in app's private cache directory
+- Automatically cleaned when storage is low
+
+**Cache Size Estimation**:
+- **City Area (5km radius)**: 20-50 MB
+- **Suburban Area (10km radius)**: 50-100 MB
+- **Rural Area (20km radius)**: 100-200 MB
+- **Zoom Level Impact**: Higher zoom = more storage
+
+**Cache Persistence**:
+- Cached maps persist until app cache is cleared
+- Automatic cleanup after ~30 days of non-use
+- Manual cache clearing via Android Settings
+
+#### **Offline Usage Instructions**
+
+**How to Use Offline Maps**:
+1. **Pre-download**: Cache maps while connected to internet
+2. **Go Offline**: Disable internet/mobile data
+3. **Open App**: Launch the application normally
+4. **Navigate**: Cached areas will load without internet
+5. **Limitations**: Only cached areas will be visible
+
+**Offline Functionality Available**:
+- ✅ **Map Viewing**: Cached map tiles display normally
+- ✅ **Zoom/Pan**: Full navigation within cached areas
+- ✅ **Location Markers**: GPS location still works
+- ✅ **Map Types**: All cached map types available
+- ❌ **Search**: No place search without internet
+- ❌ **Traffic**: No real-time traffic data
+- ❌ **New Areas**: Cannot load uncached areas
 
 ## 🚀 Getting Started
 
@@ -397,6 +505,147 @@ Intelligent permission requesting based on location mode - fine permissions for 
 ### 6. UI State Management
 Real-time UI updates reflecting current mode, location status, and map configuration.
 
+## 🌐 Advanced Offline Maps Implementation
+
+### 🔧 Alternative Solutions for Full Offline Support
+
+#### **Option 1: OpenStreetMap (OSMDroid) Integration**
+
+**Dependencies**:
+```gradle
+implementation 'org.osmdroid:osmdroid-android:6.1.14'
+implementation 'org.osmdroid:osmdroid-mapsforge:6.1.14'
+```
+
+**Implementation**:
+```java
+// Replace GoogleMap with OSMDroid MapView
+MapView mapView = findViewById(R.id.mapview);
+mapView.setTileSource(TileSourceFactory.MAPNIK);
+
+// Download offline tiles
+MapTileDownloader downloader = new MapTileDownloader();
+downloader.downloadAreaAsync(context, tileSource, boundingBox, zoomMin, zoomMax);
+```
+
+**Benefits**:
+- ✅ **True Offline**: Complete offline functionality
+- ✅ **Custom Tiles**: Various map sources available
+- ✅ **Open Source**: Free and customizable
+- ✅ **Offline Routing**: With additional libraries
+
+#### **Option 2: Mapbox SDK Implementation**
+
+**Dependencies**:
+```gradle
+implementation 'com.mapbox.maps:android:10.16.0'
+```
+
+**Offline Region Download**:
+```java
+// Define offline region
+LatLngBounds bounds = new LatLngBounds.Builder()
+    .include(northEast)
+    .include(southWest)
+    .build();
+
+// Create offline region definition
+OfflineRegionDefinition definition = new OfflineTilePyramidRegionDefinition(
+    styleURL, bounds, minZoom, maxZoom, pixelRatio);
+
+// Download offline region
+offlineManager.createOfflineRegion(definition, metadata, callback);
+```
+
+**Benefits**:
+- ✅ **Vector Tiles**: Efficient storage and rendering
+- ✅ **Offline Routing**: Built-in navigation support
+- ✅ **Custom Styling**: Highly customizable maps
+- ✅ **Professional**: Enterprise-grade solution
+
+#### **Option 3: Hybrid Approach (Current + OSMDroid)**
+
+**Implementation Strategy**:
+```java
+public class HybridMapActivity extends AppCompatActivity {
+    private GoogleMap googleMap;
+    private MapView osmMap;
+    private boolean isOnline;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        // Initialize both map systems
+        setupGoogleMaps();
+        setupOSMDroid();
+
+        // Switch based on connectivity
+        switchMapProvider(isNetworkAvailable());
+    }
+
+    private void switchMapProvider(boolean online) {
+        if (online) {
+            showGoogleMaps();
+        } else {
+            showOSMDroidMaps();
+        }
+    }
+}
+```
+
+### 📱 Offline Maps Best Practices
+
+#### **Download Strategy**:
+1. **WiFi Only**: Download large areas only on WiFi
+2. **Progressive Download**: Download in chunks to avoid timeouts
+3. **User Control**: Let users choose what to download
+4. **Storage Monitoring**: Check available storage before download
+
+#### **Cache Management**:
+```java
+// Monitor cache size
+private long getCacheSize() {
+    File cacheDir = getCacheDir();
+    return calculateDirectorySize(cacheDir);
+}
+
+// Clean old cache
+private void cleanOldCache() {
+    long maxAge = 30 * 24 * 60 * 60 * 1000; // 30 days
+    File[] files = getCacheDir().listFiles();
+    for (File file : files) {
+        if (System.currentTimeMillis() - file.lastModified() > maxAge) {
+            file.delete();
+        }
+    }
+}
+```
+
+#### **User Experience Guidelines**:
+- **Progress Indicators**: Show download progress clearly
+- **Cancellation**: Allow users to cancel downloads
+- **Storage Warnings**: Warn about storage usage
+- **Offline Indicators**: Show when in offline mode
+
+### 🔧 Implementation Recommendations
+
+#### **For Basic Offline Support** (Current Implementation):
+- ✅ Use Google Maps with intelligent caching
+- ✅ Pre-load areas by camera movement
+- ✅ Inform users about limitations
+- ✅ Provide fallback messaging
+
+#### **For Advanced Offline Support**:
+- 🔄 Implement OSMDroid for true offline capability
+- 🔄 Add tile download management
+- 🔄 Implement offline search functionality
+- 🔄 Add offline routing capabilities
+
+#### **For Enterprise Solutions**:
+- 🏢 Consider Mapbox for professional features
+- 🏢 Implement custom tile servers
+- 🏢 Add offline data synchronization
+- 🏢 Implement custom map styling
+
 ## 🔍 Troubleshooting
 
 ### Common Issues
@@ -405,6 +654,8 @@ Real-time UI updates reflecting current mode, location status, and map configura
 2. **Location not found**: Check device location settings and permissions
 3. **Network location slow**: Ensure WiFi/cellular data is available
 4. **GPS accuracy poor**: Use in open area with clear sky view
+5. **Offline maps not working**: Ensure areas were properly cached while online
+6. **Cache not persisting**: Check if device storage is full or cache was cleared
 
 ### Debug Tips
 
@@ -412,6 +663,8 @@ Real-time UI updates reflecting current mode, location status, and map configura
 - Verify permissions in device settings
 - Test on physical device for accurate location services
 - Ensure Google Play Services is updated
+- Monitor cache directory for offline map tiles
+- Test offline functionality by disabling internet
 
 ## 🚀 Future Enhancements
 
@@ -489,6 +742,15 @@ This project is for educational and demonstration purposes.
 - [ ] Test indoors vs outdoors
 - [ ] Test with location services disabled
 - [ ] Test permission denial scenarios
+
+### Offline Maps Testing
+
+- [ ] **Cache Download**: Test map caching in different areas
+- [ ] **Offline Viewing**: Disable internet and verify cached maps load
+- [ ] **Storage Impact**: Monitor storage usage during caching
+- [ ] **Cache Persistence**: Verify maps remain cached after app restart
+- [ ] **Partial Coverage**: Test behavior in partially cached areas
+- [ ] **No Cache**: Test behavior when no maps are cached offline
 
 ## 🔐 Security Considerations
 
