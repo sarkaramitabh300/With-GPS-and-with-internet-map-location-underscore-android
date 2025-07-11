@@ -1,0 +1,17 @@
+<resources>
+    <string name="app_name">My Application</string>
+    <string name="welcome_message">Welcome to Location Tracker</string>
+    <string name="open_map_button">Open Map</string>
+    <string name="location_info">Click the button to open Google Maps and get your current location with high accuracy</string>
+    <string name="get_current_location">Get Current Location</string>
+    <string name="location_status">Tap the button to get your precise location</string>
+    <string name="fetching_location">Fetching User Location</string>
+    <string name="please_wait_fetching">Please wait...Fetching Accurate Location</string>
+    <string name="gps_disabled">GPS is Disabled, Enable it from Settings</string>
+    <string name="open_map_network_button">Open Map (Network)</string>
+    <string name="network_location_info">Green button uses cell towers, WiFi, and IP location (no GPS required)</string>
+    <string name="fetching_network_location">Fetching Network Location</string>
+    <string name="please_wait_network">Please wait...Getting location from network</string>
+    <string name="network_location_found">Network location found</string>
+    <string name="network_location_failed">Failed to get network location</string>
+</resources>
